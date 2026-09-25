@@ -1,0 +1,30 @@
+# docker compose up --build   →   http://localhost:8080
+# Reads ./.env (copy .env.example). The admin UI, API and chat share one origin.
+services:
+  backend:
+    build: ./backend
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      APP_SECRET_KEY: ${APP_SECRET_KEY:?not set — see .env.example}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?not set — see .env.example}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?not set — see .env.example}
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////data/hop-chat.db}
+      FRONTEND_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
+      CORS_ORIGINS: ${PUBLIC_BASE_URL:-http://localhost:8080}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      PUBLIC_MESSAGE_RATE_LIMIT: ${PUBLIC_MESSAGE_RATE_LIMIT:-20/minute}
+    volumes:
+      - chat-data:/data
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "${PORT:-8080}:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  chat-data:

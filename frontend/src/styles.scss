@@ -1,0 +1,4 @@
+// The entire required global stylesheet — hop-core DESIGN-SYSTEM.md §1.
+@use '@heretto/hop-ui/theme' as hop;
+
+@include hop.hop-core-theme();
