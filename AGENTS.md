@@ -1,6 +1,6 @@
 # HOP Chat — agent notes
 
-Built on [hop-core](https://github.com/Heretto/hop-core), pinned at **v0.1.6**
+Built on [hop-core](https://github.com/Heretto/hop-core), pinned at **v0.1.7**
 (`backend/requirements.txt` and the `@heretto/hop-ui` asset URL in
 `frontend/package.json` — always bump them together).
 
