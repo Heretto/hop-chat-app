@@ -20,7 +20,8 @@ service on a shared `edge` Docker network. HOP Chat publishes no port of its own
 | `docker-compose.proxy.yml` | The Caddy stack (Compose project `edge`). Creates the `edge` network. |
 | `Caddyfile` | One site block per service. HOP Chat's is filled in; two placeholders for yours. |
 | `.env.example` | `ACME_EMAIL` and the hostnames Caddy serves. |
-| `docker-compose.override.yml` | Layered on the repo's `docker-compose.yml`: no published port, joins `edge` as `hop-chat`, memory caps, log rotation. |
+| `docker-compose.override.yml` | Layered on the repo's `docker-compose.yml`: no published port, joins the proxy's network (`edge`, or `HOP_CHAT_PROXY_NETWORK`) as `hop-chat`, memory caps, log rotation. |
+| `nginx-hop-chat.conf` | Server blocks for when another app's nginx is already the entry point instead of Caddy (see below). |
 
 Sized for an e2-standard-2 (2 vCPU, 8 GB) shared three ways: HOP Chat uses
 about 100 MB at runtime and is capped at 512 MB (backend) + 128 MB (nginx).
@@ -53,13 +54,22 @@ cp .env.example .env        # set ACME_EMAIL and HOP_CHAT_HOST
 docker compose -f docker-compose.proxy.yml up -d
 ```
 
-**3. Configure HOP Chat.** In the repo root, `cp .env.example .env` and set the
-three secrets. Then set:
+**3. Configure HOP Chat.** Create the repo-root `.env` (don't copy
+`.env.example`: its `DATABASE_URL` is for running without Docker and would put
+the database inside the container, where a rebuild loses it):
 
-```env
-PUBLIC_BASE_URL=https://chat.example.com   # exactly the HOP_CHAT_HOST origin
+```bash
+cat > .env <<EOF
+APP_SECRET_KEY=$(openssl rand -hex 32)
+JWT_SECRET_KEY=$(openssl rand -hex 32)
+ENCRYPTION_KEY=$(openssl rand -hex 32)
+PUBLIC_BASE_URL=https://chat.example.com
 COOKIE_SECURE=true
+EOF
+chmod 600 .env
 ```
+
+`PUBLIC_BASE_URL` must be exactly the HOP Chat site's origin.
 
 Back up `ENCRYPTION_KEY` outside the VM (e.g. Secret Manager). Without it,
 every stored API key and Deploy token is unreadable.
@@ -72,6 +82,7 @@ docker compose -f docker-compose.yml -f deploy/shared-vm/docker-compose.override
 
 Use the same two `-f` flags for every later command (`ps`, `logs`, `down`,
 `pull`). Otherwise Compose reverts to the standalone layout and publishes port 8080.
+The services are `hop-chat-backend` and `hop-chat-web` (e.g. `logs -f hop-chat-backend`).
 
 **5. Check** `https://chat.example.com/api/health` → `{"status":"ok"}`, then
 open `https://chat.example.com/` to register the first account.
@@ -79,7 +90,13 @@ open `https://chat.example.com/` to register the first account.
 ## Adding your other two services
 
 Each service joins `edge` under an alias, publishes no ports, and gets a site
-block in the Caddyfile. In that service's own compose file:
+block in the Caddyfile. **Every container on a shared network needs a name no
+other app uses.** Compose registers each service under its service name on
+every network it joins, so two apps that both have a `frontend` service make
+`frontend` resolve to both, at random. HOP Chat's services are called
+`hop-chat-backend` and `hop-chat-web` for this reason. Have the proxy use a
+unique alias, and put only the container the proxy talks to on the shared
+network. In that service's own compose file:
 
 ```yaml
 services:
@@ -106,6 +123,34 @@ docker compose -f docker-compose.proxy.yml exec caddy caddy reload --config /etc
 Keep each service on its own hostname, and leave HOP Chat's `COOKIE_DOMAIN`
 unset. Its login cookies then stay on its own host and can't collide with
 another app's, which matters if one of the others is also a hop-core app.
+
+## Behind an existing nginx (instead of Caddy)
+
+If another app's nginx already owns 80/443 (for example, it terminates TLS
+for that app, with certbot on the host), HOP Chat can sit behind it instead of
+adding Caddy. That nginx needs no restart and its app is not interrupted.
+
+1. **Find its network**:
+   `docker inspect <nginx-container> --format '{{range $n, $_ := .NetworkSettings.Networks}}{{$n}} {{end}}'`.
+   Put it in the repo-root `.env` as `HOP_CHAT_PROXY_NETWORK=<that network>`.
+   Only `hop-chat-web` joins it, as `hop-chat`.
+2. **Point DNS** for HOP Chat's subdomain at the VM. The certificate challenge
+   needs it, and the other nginx's port-80 server must answer
+   `/.well-known/acme-challenge/` for any host (the usual certbot setup).
+3. **Issue the certificate** the way that nginx's existing ones were. Check
+   `/etc/letsencrypt/renewal/*.conf` for `authenticator` and `webroot_path`,
+   e.g. `sudo certbot certonly --webroot -w <webroot_path> -d chat.example.com`.
+4. **Start HOP Chat** with the override (as in Setup, step 4), but skip Caddy
+   (Setup, step 2).
+5. **Add `nginx-hop-chat.conf`** (with your hostname) to that nginx's
+   configuration: a new file in its `conf.d` if that directory is mounted from
+   the host, otherwise append it to the mounted config file. Then run
+   `docker exec <nginx-container> nginx -t && docker exec <nginx-container> nginx -s reload`.
+
+The server blocks resolve `hop-chat` per request, so if HOP Chat is down only
+its subdomain fails. The other nginx still starts and reloads normally. They
+also turn off response buffering so streamed answers arrive as they are
+written, and send no `X-Frame-Options`, because the chat must be embeddable.
 
 ## Things worth knowing
 

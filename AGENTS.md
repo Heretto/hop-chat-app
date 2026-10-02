@@ -114,8 +114,15 @@ An embeddable documentation chat. The domain model, and which layer owns what:
   and an appended chain would let visitors spoof their IP past the rate limits.
 - **Shared-VM deployment** (`deploy/shared-vm/`): Caddy stack (project `edge`,
   creates the `edge` network) plus an override for the main compose file
-  (`!reset` drops the published port; needs Compose ≥ 2.24). The override must
-  not set `name:`: renaming the project renames the `chat-data` volume.
+  (`!reset` drops the published port; needs Compose ≥ 2.24). The override joins
+  `HOP_CHAT_PROXY_NETWORK` (default `edge`), so it also works behind another
+  app's existing nginx (`nginx-hop-chat.conf`). It must not set `name:`:
+  renaming the project renames the `chat-data` volume.
+- **Compose service names must stay unique** (`hop-chat-backend`,
+  `hop-chat-web`). Compose registers each service name on every network the
+  service joins, so on a network shared with another app, a plain
+  `frontend`/`backend` resolves to both apps' containers. Verified: another
+  app's nginx would then send part of its traffic to HOP Chat.
 - **Visitor path prefixes need their trailing slash** in every proxy (the ng
   proxy files and `frontend/nginx.conf`): a bare `/c` also catches the admin's
   `/chat-apps`, and a bare `/a` would catch `/agents`, `/account` and `/admin`.
