@@ -107,6 +107,15 @@ An embeddable documentation chat. The domain model, and which layer owns what:
 - On some mounted filesystems (e.g. a sandbox's host mount), SQLite fails with
   "attempt to write a readonly database". Point `DATABASE_URL` at a local path.
 - Angular 22 needs Node ≥ 22.22.3 or ≥ 24.15.
+- **Forwarding headers.** `frontend/nginx.conf` believes `X-Forwarded-For` /
+  `X-Forwarded-Proto` only from a proxy on a private network (Caddy in
+  `deploy/shared-vm/`). It passes the backend a single client address, never a
+  chain, because uvicorn (`--forwarded-allow-ips "*"`) takes the first entry,
+  and an appended chain would let visitors spoof their IP past the rate limits.
+- **Shared-VM deployment** (`deploy/shared-vm/`): Caddy stack (project `edge`,
+  creates the `edge` network) plus an override for the main compose file
+  (`!reset` drops the published port; needs Compose ≥ 2.24). The override must
+  not set `name:`: renaming the project renames the `chat-data` volume.
 - **Visitor path prefixes need their trailing slash** in every proxy (the ng
   proxy files and `frontend/nginx.conf`): a bare `/c` also catches the admin's
   `/chat-apps`, and a bare `/a` would catch `/agents`, `/account` and `/admin`.

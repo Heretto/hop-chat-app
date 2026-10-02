@@ -156,6 +156,12 @@ nginx serves the admin UI and proxies `/api`, `/c`, `/a`, `/embed` and `/widget`
 the backend, all on one origin. Put TLS in front, set `PUBLIC_BASE_URL` to the
 public `https://` origin and `COOKIE_SECURE=true`.
 
+**Sharing a VM with other services?** [`deploy/shared-vm/`](deploy/shared-vm/README.md)
+adds Caddy as the single entry point. It owns 80/443, provides automatic HTTPS
+and routes by hostname to each service on a shared Docker network. It also has
+an override that runs HOP Chat behind it with no published port, plus memory
+caps and log rotation.
+
 ### Tests
 
 ```bash
