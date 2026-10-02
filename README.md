@@ -27,7 +27,7 @@ behind every chat is configured as a standard hop-core agent.
 | **AI configuration** | A provider API key and model (Anthropic, OpenAI or Gemini) | Credentials → AI Providers |
 | **Agent** | A standard hop-core agent: AI configuration, description (its instructions), context files (style guide, tone, product background), reference URLs, feedback memory | Agents |
 | **Heretto Deploy credential** | Organization ID, deployment ID, Deploy API token, portal URL, and an optional audience that restricts what the chat can see | Credentials → Heretto Deploy |
-| **Chat app** | One agent + one deployment + appearance + where it may be embedded. It gets its own URL and embed snippet | Chat Apps |
+| **Chat app** | One agent + one deployment + appearance + where it may be embedded. It gets its own URL, a chat-bubble embed, and optionally a search-answers embed for a docs portal | Chat Apps |
 
 For a new website or app, create an agent (or reuse one), then create a chat
 app that uses it. Several chat apps can share an agent and a deployment.
@@ -53,6 +53,41 @@ app that uses it. Several chat apps can share an agent and a deployment.
   while the visitor only sees a gentle apology.
 - A **Test** tab that runs the live chat inside the admin UI.
 - The agent's own **Test** tab (from hop-core) for tuning its instructions.
+
+## Search answers
+
+A chat app can also answer **inside a docs portal's search results**. When a
+search reads like a question, a panel appears above the results:
+
+- **An answer**, if the agent searched and read the docs and found topics that
+  clearly answer it. The answer links its sources.
+- **A follow-up question**, if it isn't sure: the question is ambiguous, or the
+  docs it found don't clearly answer it. The question often comes with a few
+  one-click options.
+- **Nothing**, for keyword searches like `api tokens`, where the results list is
+  the answer. Short keyword searches skip the AI call entirely; anything else
+  is the agent's call.
+
+The visitor can reply in the panel, either to answer the follow-up or to ask
+more. That continues as an ordinary chat with the same agent, which keeps
+searching and reading. **Open in chat** moves the conversation into the
+full chat page.
+
+Turn it on in the chat app's **Search answers** tab, then add the snippet to
+the portal's search page:
+
+```html
+<div data-hop-answer></div>
+<script src="https://chat.example.com/embed/AbC123xyz_9Q/search-answers.js" async></script>
+```
+
+The script reads the search terms from the URL (`q`, `query`, `search`, … —
+configurable, including `#/search?q=` routes). It waits for the mount point to
+appear, and follows new searches in single-page portals. If a portal keeps the
+terms out of the URL, call `HopAnswers.search(terms)` and `HopAnswers.clear()`
+yourself. The tab's **Try a search** runs real searches against a mock results
+page, with the agent log alongside, so you can see why something was answered,
+clarified or skipped.
 
 ## Embedding
 
@@ -117,9 +152,15 @@ cp .env.example .env    # fill in the three secrets; set PUBLIC_BASE_URL
 docker compose up --build   # http://localhost:8080
 ```
 
-nginx serves the admin UI and proxies `/api`, `/c`, `/embed` and `/widget` to
+nginx serves the admin UI and proxies `/api`, `/c`, `/a`, `/embed` and `/widget` to
 the backend, all on one origin. Put TLS in front, set `PUBLIC_BASE_URL` to the
 public `https://` origin and `COOKIE_SECURE=true`.
+
+**Sharing a VM with other services?** [`deploy/shared-vm/`](deploy/shared-vm/README.md)
+adds Caddy as the single entry point. It owns 80/443, provides automatic HTTPS
+and routes by hostname to each service on a shared Docker network. It also has
+an override that runs HOP Chat behind it with no published port, plus memory
+caps and log rotation.
 
 ### Tests
 
@@ -140,9 +181,11 @@ make doctor      # hop-core integration audit
   used by or exposed to the chat.
 - **Framing** is limited by CSP `frame-ancestors` to each chat app's allowed
   sites. An empty list means any site may embed it.
-- **Rate limits**: visitor messages are limited per IP
-  (`PUBLIC_MESSAGE_RATE_LIMIT`, default 20/minute), because each one is a paid
-  model call. The limiter is in memory, so run one backend replica.
+- **Rate limits**: visitor messages (`PUBLIC_MESSAGE_RATE_LIMIT`, default
+  20/minute) and search answers (`PUBLIC_SEARCH_RATE_LIMIT`, default 30/minute)
+  are limited per IP, because each one can be a paid model call. A limited
+  search panel just stays hidden. The limiter is in memory, so run one backend
+  replica.
 - Visitor messages and Deploy content go to the model as conversation and tool
   results. Tool output is framed as reference material rather than
   instructions. The agent's context files keep the authority hop-core gives them.

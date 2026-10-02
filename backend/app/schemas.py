@@ -56,6 +56,66 @@ class Appearance(BaseModel):
         return cleaned
 
 
+_PARAM = re.compile(r"^[A-Za-z0-9_.\-\[\]]{1,40}$")
+
+
+class SearchSettings(BaseModel):
+    """How the search-answers widget finds the query and where it renders."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    # URL parameters (query string, or a #/route?query) that carry the search
+    # terms, tried in order. Covers most portals without configuration.
+    query_params: List[str] = Field(
+        default_factory=lambda: ["q", "query", "search", "searchQuery", "keywords", "term"],
+        max_length=10,
+    )
+    # Where the widget renders: a CSS selector on the portal's search page.
+    mount_selector: str = Field("[data-hop-answer]", min_length=1, max_length=200)
+    # "prepend" = inside the element, before its content; "before" = as its previous sibling.
+    mount_position: Literal["prepend", "append", "before", "after"] = "prepend"
+    # Label above an answer.
+    heading: str = Field("AI answer", max_length=60)
+    # Keyword-style searches ("api tokens") skip the model entirely. Off = the
+    # model judges every search, at the cost of a model call per search.
+    skip_keyword_searches: bool = True
+
+    @field_validator("query_params")
+    @classmethod
+    def _params(cls, value: List[str]) -> List[str]:
+        cleaned: List[str] = []
+        for name in value:
+            name = (name or "").strip()
+            if not name:
+                continue
+            if not _PARAM.match(name):
+                raise ValueError(f"{name!r} is not a valid URL parameter name")
+            if name not in cleaned:
+                cleaned.append(name)
+        if not cleaned:
+            raise ValueError("Give at least one URL parameter name")
+        return cleaned
+
+    @field_validator("mount_selector")
+    @classmethod
+    def _selector(cls, value: str) -> str:
+        value = value.strip()
+        if "<" in value or "\n" in value:
+            raise ValueError("Use a CSS selector such as [data-hop-answer] or #search-results")
+        return value
+
+
+class SearchWidgetIn(BaseModel):
+    enabled: bool = False
+    settings: SearchSettings = Field(default_factory=SearchSettings)
+
+
+class SearchWidgetOut(SearchWidgetIn):
+    page_url: str
+    script_url: str
+    embed_snippet: str
+
+
 def normalize_origin(value: str) -> str:
     """``https://Example.com/path`` → ``https://example.com``."""
     raw = (value or "").strip()
@@ -89,6 +149,7 @@ class ChatAppBase(BaseModel):
     appearance: Appearance = Field(default_factory=Appearance)
     allowed_origins: List[str] = Field(default_factory=list, max_length=50)
     is_active: bool = True
+    search: Optional[SearchWidgetIn] = None
 
     @field_validator("allowed_origins")
     @classmethod
@@ -110,6 +171,7 @@ class ChatAppUpdate(BaseModel):
     appearance: Optional[Appearance] = None
     allowed_origins: Optional[List[str]] = Field(None, max_length=50)
     is_active: Optional[bool] = None
+    search: Optional[SearchWidgetIn] = None
 
     @field_validator("allowed_origins")
     @classmethod
@@ -152,6 +214,7 @@ class ChatAppResponse(_Timestamps):
     chat_url: str
     embed_script_url: str
     embed_snippet: str
+    search: SearchWidgetOut
     conversation_count: int = 0
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -169,6 +232,8 @@ class MessageOut(_Timestamps):
     role: str
     content: str
     sources: List[SourceOut] = Field(default_factory=list)
+    # A clarifying question's choices (search answers), shown as one-click replies.
+    options: List[str] = Field(default_factory=list)
     created_at: datetime
 
 
@@ -187,6 +252,8 @@ class ConversationSummary(_Timestamps):
 class OperatorConversationSummary(ConversationSummary):
     origin: Optional[str] = None
     locale: Optional[str] = None
+    # Where it started: "chat" (the bubble / chat page) or "search" (search answers).
+    surface: str = "chat"
     visitor: str  # a short, stable pseudonym derived from the visitor hash
 
 
@@ -216,6 +283,12 @@ class PublicChatConfig(BaseModel):
 class NewConversation(BaseModel):
     origin: Optional[str] = Field(None, max_length=512)
     locale: Optional[str] = Field(None, max_length=35)
+
+
+class SearchRequest(BaseModel):
+    query: str = Field(..., min_length=1, max_length=500)
+    locale: Optional[str] = Field(None, max_length=35)
+    origin: Optional[str] = Field(None, max_length=512)
 
 
 class VisitorMessage(BaseModel):

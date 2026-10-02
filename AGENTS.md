@@ -42,8 +42,22 @@ An embeddable documentation chat. The domain model, and which layer owns what:
   auth. Tool descriptions and answering guidance are ported from it. The v4
   OpenAPI spec lives in that repo (`deploy-api-v4-openapi-spec.json`).
 - `backend/app/widget/static/` — visitor UI, plain JS with no build step:
-  `embed.js` (launcher bubble in a shadow root, and the iframe), `chat.js` and
-  `chat.css` (the chat page at `/c/{public_id}`).
+  `common.js` (visitor token, API/SSE, safe Markdown, DOM helpers; loaded
+  first by both pages), `embed.js` (chat launcher bubble in a shadow root, and
+  the iframe), `chat.js`/`chat.css` (the chat page at `/c/{public_id}`), and
+  `search-embed.js` (the search-answers loader), `answer.js`/`answer.css` (the
+  search-answers panel at `/a/{public_id}`).
+- **Search answers** (`app/chat/search.py`, `POST /public/chat/{id}/search`):
+  the first reply to a portal search. `looks_like_question` skips keyword
+  searches without a model call. Otherwise the agent gets `SEARCH_GUIDANCE`
+  and must open its reply with `[ANSWER]`, `[CLARIFY]` (plus up to four `- `
+  options) or `[NOT_A_QUESTION]`, which `parse_reply` turns into what the
+  panel shows. "Not a question" deletes the conversation again. Later turns
+  use the ordinary `/messages` route, so they are a normal chat. Clarifying
+  options are stored in `details.options` and put back into the model's
+  history as bullets. The settings live in `chat_app_search_widgets` (a
+  separate table, so `create_all` adds it to existing databases without a
+  migration).
 
 ## What is specific to this project
 
@@ -53,8 +67,8 @@ An embeddable documentation chat. The domain model, and which layer owns what:
   embed snippets and chat URLs are built from it.
 - **Start the stack locally**: `./dev.sh` (modelled on hop-core's `demo/run.sh`):
   it installs on first run, generates `backend/.env` via `scripts/setup.sh`, and
-  picks free ports. It writes a temporary ng proxy for `/api`, `/c`, `/embed`
-  and `/widget`, and passes `PUBLIC_BASE_URL` for the chosen port so embed
+  picks free ports. It writes a temporary ng proxy for `/api/`, `/c/`, `/a/`,
+  `/embed/` and `/widget/`, and passes `PUBLIC_BASE_URL` for the chosen port so embed
   snippets are right. The proxy file must end in `.json`, because ng picks the
   format from the extension. The backend runs without `--reload` unless asked:
   uvicorn's reloader outlives an app that fails to start, which would hide the
@@ -65,7 +79,7 @@ An embeddable documentation chat. The domain model, and which layer owns what:
 - **One origin, and cookies on visitor paths.** The admin UI and the visitor
   chat share an origin, so an operator's `access_token` cookie reaches the
   public API. `app/middleware.py` strips cookies on `/api/v1/public/`, `/c/`,
-  `/embed/` and `/widget/`. Without that, hop-core's CSRF middleware 403s every
+  `/a/`, `/embed/` and `/widget/`. Without that, hop-core's CSRF middleware 403s every
   visitor POST from a signed-in operator's browser, and the Test tab breaks.
 - **Framing.** hop-core sends `X-Frame-Options: DENY` on everything. The chat
   page is meant to be framed, so it sends `X-Hop-Frameable` and the middleware
@@ -93,6 +107,18 @@ An embeddable documentation chat. The domain model, and which layer owns what:
 - On some mounted filesystems (e.g. a sandbox's host mount), SQLite fails with
   "attempt to write a readonly database". Point `DATABASE_URL` at a local path.
 - Angular 22 needs Node ≥ 22.22.3 or ≥ 24.15.
+- **Forwarding headers.** `frontend/nginx.conf` believes `X-Forwarded-For` /
+  `X-Forwarded-Proto` only from a proxy on a private network (Caddy in
+  `deploy/shared-vm/`). It passes the backend a single client address, never a
+  chain, because uvicorn (`--forwarded-allow-ips "*"`) takes the first entry,
+  and an appended chain would let visitors spoof their IP past the rate limits.
+- **Shared-VM deployment** (`deploy/shared-vm/`): Caddy stack (project `edge`,
+  creates the `edge` network) plus an override for the main compose file
+  (`!reset` drops the published port; needs Compose ≥ 2.24). The override must
+  not set `name:`: renaming the project renames the `chat-data` volume.
+- **Visitor path prefixes need their trailing slash** in every proxy (the ng
+  proxy files and `frontend/nginx.conf`): a bare `/c` also catches the admin's
+  `/chat-apps`, and a bare `/a` would catch `/agents`, `/account` and `/admin`.
 - **Cards get their padding from `<mat-card-content>`.** The hop-core theme
   leaves `mat-card` itself at zero padding, so put card bodies in
   `<mat-card-content>` rather than adding padding per component. A card that is

@@ -12,8 +12,10 @@ from hop_core.models.agent import Agent
 from hop_core.models.credential import Credential
 
 from app.chat.service import problems
-from app.models import ChatApp, Conversation
-from app.schemas import AgentRef, Appearance, ChatAppResponse, DeployCredentialRef
+from app.models import ChatApp, Conversation, SearchWidget
+from app.schemas import (
+    AgentRef, Appearance, ChatAppResponse, DeployCredentialRef, SearchSettings, SearchWidgetOut,
+)
 
 
 def public_origin() -> str:
@@ -35,12 +37,57 @@ def embed_snippet(public_id: str) -> str:
     return f'<script src="{embed_script_url(public_id)}" async></script>'
 
 
+def search_page_url(public_id: str) -> str:
+    return f"{public_origin()}/a/{public_id}"
+
+
+def search_script_url(public_id: str) -> str:
+    return f"{public_origin()}/embed/{public_id}/search-answers.js"
+
+
+def search_settings_of(chat_app: ChatApp) -> SearchSettings:
+    widget = chat_app.search_widget
+    return SearchSettings.model_validate((widget.settings if widget else None) or {})
+
+
+def search_snippet(public_id: str, settings: SearchSettings) -> str:
+    script = f'<script src="{search_script_url(public_id)}" async></script>'
+    if settings.mount_selector == "[data-hop-answer]":
+        # The default: a placeholder where the answer should appear.
+        return (
+            "<!-- Where the answer should appear, e.g. above the search results -->\n"
+            "<div data-hop-answer></div>\n" + script
+        )
+    return script
+
+
+def search_widget_out(chat_app: ChatApp) -> SearchWidgetOut:
+    settings = search_settings_of(chat_app)
+    widget = chat_app.search_widget
+    return SearchWidgetOut(
+        enabled=bool(widget and widget.enabled),
+        settings=settings,
+        page_url=search_page_url(chat_app.public_id),
+        script_url=search_script_url(chat_app.public_id),
+        embed_snippet=search_snippet(chat_app.public_id, settings),
+    )
+
+
+def apply_search(chat_app: ChatApp, data) -> None:
+    """Create or update a chat app's search-answers settings from a SearchWidgetIn."""
+    if chat_app.search_widget is None:
+        chat_app.search_widget = SearchWidget()
+    chat_app.search_widget.enabled = data.enabled
+    chat_app.search_widget.settings = data.settings.model_dump()
+
+
 def load_chat_app(db: Session, **filters) -> Optional[ChatApp]:
     """A chat app with its agent, AI configuration and Deploy credential loaded."""
     query = db.query(ChatApp).options(
         joinedload(ChatApp.agent).joinedload(Agent.ai_configuration),
         joinedload(ChatApp.agent).selectinload(Agent.context_files),
         joinedload(ChatApp.deploy_credential),
+        joinedload(ChatApp.search_widget),
     )
     for key, value in filters.items():
         query = query.filter(getattr(ChatApp, key) == value)
@@ -100,6 +147,7 @@ def serialize_chat_app(chat_app: ChatApp, db: Session) -> ChatAppResponse:
         chat_url=chat_url(chat_app.public_id),
         embed_script_url=embed_script_url(chat_app.public_id),
         embed_snippet=embed_snippet(chat_app.public_id),
+        search=search_widget_out(chat_app),
         conversation_count=count,
         created_at=chat_app.created_at,
         updated_at=chat_app.updated_at,

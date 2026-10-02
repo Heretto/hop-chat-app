@@ -1,0 +1,32 @@
+# HOP Chat on a VM shared with other services, behind deploy/shared-vm's Caddy.
+# Layered on the main compose file — from the repo root:
+#
+#   docker compose -f docker-compose.yml -f deploy/shared-vm/docker-compose.override.yml up -d --build
+#
+# Compared with the main file: no published port (Caddy is the only way in),
+# the frontend joins the shared "edge" network as "hop-chat", the backend gets
+# a memory cap so it cannot crowd out its neighbours, and logs are rotated.
+# Needs Docker Compose 2.24 or later for `!reset`.
+#
+# No `name:` here on purpose: changing the project name renames the data
+# volume, and an existing deployment would come up on an empty database.
+
+services:
+  backend:
+    mem_limit: 512m     # measured ~100 MB in use; this leaves plenty of headroom
+    logging: &logs
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  frontend:
+    ports: !reset []
+    mem_limit: 128m
+    networks:
+      default:
+      edge:
+        aliases: [hop-chat]
+    logging: *logs
+
+networks:
+  edge:
+    external: true

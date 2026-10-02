@@ -14,6 +14,33 @@ export interface Appearance {
   show_sources: boolean;
 }
 
+export interface SearchSettings {
+  query_params: string[];
+  mount_selector: string;
+  mount_position: 'prepend' | 'append' | 'before' | 'after';
+  heading: string;
+  skip_keyword_searches: boolean;
+}
+
+export interface SearchWidget {
+  enabled: boolean;
+  settings: SearchSettings;
+}
+
+export interface SearchWidgetOut extends SearchWidget {
+  page_url: string;
+  script_url: string;
+  embed_snippet: string;
+}
+
+export const DEFAULT_SEARCH_SETTINGS: SearchSettings = {
+  query_params: ['q', 'query', 'search', 'searchQuery', 'keywords', 'term'],
+  mount_selector: '[data-hop-answer]',
+  mount_position: 'prepend',
+  heading: 'AI answer',
+  skip_keyword_searches: true,
+};
+
 export interface ChatApp {
   id: string;
   public_id: string;
@@ -30,6 +57,7 @@ export interface ChatApp {
   chat_url: string;
   embed_script_url: string;
   embed_snippet: string;
+  search: SearchWidgetOut;
   conversation_count: number;
   created_at?: string;
   updated_at?: string | null;
@@ -44,6 +72,7 @@ export interface ChatAppWrite {
   appearance?: Appearance;
   allowed_origins?: string[];
   is_active?: boolean;
+  search?: SearchWidget;
 }
 
 export interface Source { title: string; path: string; url?: string | null; }
@@ -53,6 +82,7 @@ export interface TranscriptMessage {
   role: 'user' | 'assistant';
   content: string;
   sources: Source[];
+  options?: string[];
   details: {
     error?: string;
     agent?: string;
@@ -60,6 +90,8 @@ export interface TranscriptMessage {
     model?: string;
     ai_configuration?: string;
     tool_calls?: { tool: string; args?: Record<string, string>; url?: string; status?: string }[];
+    surface?: string;
+    kind?: 'answer' | 'clarify';
   };
   created_at: string;
 }
@@ -73,6 +105,7 @@ export interface ConversationSummary {
   origin?: string | null;
   locale?: string | null;
   visitor: string;
+  surface: 'chat' | 'search';
 }
 
 export interface Conversation extends ConversationSummary { messages: TranscriptMessage[]; }

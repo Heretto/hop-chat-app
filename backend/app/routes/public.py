@@ -29,6 +29,7 @@ from hop_core.db import get_db, get_session_factory
 
 from app import trace as trace_tokens
 from app.chat import service
+from app.chat.search import SEARCH_GUIDANCE, looks_like_question, parse_reply
 from app.models import ChatApp, Conversation, ConversationMessage
 from app.routes.common import appearance_of, load_chat_app, visitor_hash
 from app.schemas import (
@@ -37,6 +38,8 @@ from app.schemas import (
     MessageOut,
     NewConversation,
     PublicChatConfig,
+    SearchRequest,
+    SearchSettings,
     VisitorMessage,
 )
 
@@ -52,6 +55,12 @@ def _message_rate_limit() -> str:
     from hop_core.config import get_settings
 
     return getattr(get_settings(), "public_message_rate_limit", "20/minute")
+
+
+def _search_rate_limit() -> str:
+    from hop_core.config import get_settings
+
+    return getattr(get_settings(), "public_search_rate_limit", "30/minute")
 
 
 def _visitor(x_visitor_token: Optional[str] = Header(None)) -> str:
@@ -84,8 +93,21 @@ def _out(message: ConversationMessage, show_sources: bool) -> MessageOut:
         role=message.role,
         content=message.content,
         sources=(message.sources or []) if show_sources else [],
+        options=list((message.details or {}).get("options") or []),
         created_at=message.created_at,
     )
+
+
+def _history_text(message: ConversationMessage) -> str:
+    """A stored message as the model should see it again.
+
+    A clarifying question's options are kept apart for the widget's chips, but
+    the model offered them, so they go back into its history as bullet lines.
+    """
+    options = (message.details or {}).get("options") or []
+    if not options:
+        return message.content
+    return message.content + "\n" + "\n".join(f"- {o}" for o in options)
 
 
 def _title_from(text: str) -> str:
@@ -191,22 +213,28 @@ async def _reply_and_store(
     locale: Optional[str],
     events: "asyncio.Queue[Optional[str]]",
     traced: bool = False,
+    mode: str = "chat",
 ) -> None:
     """Generate the reply and persist it — to completion, even if the visitor leaves.
 
     Runs in its own task with its own session: the request's session is gone
     by the time a streamed body is produced, and a visitor closing the tab
     should not lose an answer that is already paid for.
+
+    ``mode="search"`` is the first reply to a portal search: the agent gets the
+    answer/clarify protocol (app.chat.search), its marker decides the outcome,
+    and "not a question" removes the conversation again and ends with ``skip``.
     """
     db = get_session_factory()()
     try:
         chat_app = load_chat_app(db, id=chat_app_id)
         conversation = db.query(Conversation).filter(Conversation.id == conversation_id).one()
         history = [
-            ChatMessage(role=m.role, content=m.content)
+            ChatMessage(role=m.role, content=_history_text(m))
             for m in conversation.messages
             if m.role in ("user", "assistant") and not (m.details or {}).get("error")
         ]
+        searching = mode == "search"
         show_sources = appearance_of(chat_app).show_sources
         started = time.monotonic()
 
@@ -225,10 +253,28 @@ async def _reply_and_store(
             reply = await service.answer(
                 chat_app, history, locale=locale, on_status=on_status,
                 trace=emit_trace if traced else None,
+                extra_guidance=SEARCH_GUIDANCE if searching else None,
             )
+            content, details = reply.content, dict(reply.details)
+            if searching:
+                parsed = parse_reply("" if details.get("empty_reply") else reply.content)
+                await emit_trace({"type": "search.result", "kind": parsed.kind, "options": parsed.options})
+                if parsed.kind == "not_a_question":
+                    # Nothing to show and nothing worth keeping: the search results speak for themselves.
+                    db.delete(conversation)
+                    db.commit()
+                    await emit_trace({
+                        "type": "run.end",
+                        "duration_ms": int((time.monotonic() - started) * 1000),
+                        "reply_chars": 0, "sources": [],
+                    })
+                    await events.put(_sse("skip", {"reason": "not_a_question"}))
+                    return
+                content = parsed.content
+                details.update(surface="search", kind=parsed.kind, options=parsed.options)
             message = ConversationMessage(
-                conversation_id=conversation.id, role="assistant", content=reply.content,
-                sources=reply.sources, details=reply.details,
+                conversation_id=conversation.id, role="assistant", content=content,
+                sources=reply.sources, details=details,
             )
         except service.ChatUnavailable as exc:
             failure = exc.public_message
@@ -266,6 +312,9 @@ async def _reply_and_store(
             })
 
         payload = _out(message, show_sources).model_dump(mode="json")
+        if searching and not failure:
+            payload["kind"] = (message.details or {}).get("kind", "answer")
+            payload["conversation_id"] = str(conversation.id)
         await events.put(_sse("error" if failure else "message", payload))
     except Exception:
         logger.exception("Could not store a chat reply")
@@ -273,6 +322,102 @@ async def _reply_and_store(
     finally:
         db.close()
         await events.put(None)
+
+
+def _single_event_stream(event: str, data: Dict[str, Any], trace: Optional[Dict[str, Any]] = None) -> StreamingResponse:
+    async def stream() -> AsyncIterator[str]:
+        if trace is not None:
+            yield _sse("trace", {"t_ms": 0, **trace})
+        yield _sse(event, data)
+
+    return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+
+
+def _relay(events: "asyncio.Queue[Optional[str]]", first: Optional[str] = None) -> StreamingResponse:
+    async def stream() -> AsyncIterator[str]:
+        if first:
+            yield first
+        while True:
+            try:
+                item = await asyncio.wait_for(events.get(), timeout=15)
+            except asyncio.TimeoutError:
+                yield ": keep-alive\n\n"  # stops proxies closing an idle stream
+                continue
+            if item is None:
+                break
+            yield item
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+def _start(coro) -> None:
+    task = asyncio.create_task(coro)
+    _background.add(task)
+    task.add_done_callback(_background.discard)
+
+
+@router.post("/search")
+@limiter.limit(_search_rate_limit)
+async def search_answer(
+    request: Request,
+    public_id: str,
+    data: SearchRequest,
+    visitor: str = Depends(_visitor),
+    x_hop_trace: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
+    """Answer a portal search if it is a question — or ask a follow-up, or stay out of the way.
+
+    Streams server-sent events: ``skip`` (show nothing; ``reason`` is
+    "keywords", "not_a_question" or "unavailable"), or ``started`` (the
+    conversation was created; show a working state), any number of ``status``,
+    then one ``message`` (``kind`` "answer" or "clarify", plus ``options``) or
+    ``error``. The visitor replies through the ordinary
+    ``/conversations/{id}/messages`` route, which continues as a chat.
+    """
+    chat_app = _chat_app(public_id, db)
+    widget = chat_app.search_widget
+    if widget is None or not widget.enabled:
+        raise HTTPException(status_code=404, detail="Search answers are not enabled for this chat")
+    settings = SearchSettings.model_validate(widget.settings or {})
+    query = " ".join(data.query.split())
+    traced = trace_tokens.verify(x_hop_trace, chat_app.id)
+
+    if settings.skip_keyword_searches and not looks_like_question(query):
+        return _single_event_stream(
+            "skip", {"reason": "keywords"},
+            {"type": "search.skip", "query": query, "reason": "keywords"} if traced else None,
+        )
+    found = service.problems(chat_app)
+    if found:
+        # A search page must never show a broken widget; operators see the problem in the admin UI.
+        return _single_event_stream(
+            "skip", {"reason": "unavailable"},
+            {"type": "search.skip", "query": query, "reason": "unavailable", "problems": found} if traced else None,
+        )
+
+    conversation = Conversation(
+        chat_app_id=chat_app.id,
+        visitor_hash=visitor,
+        title=_title_from(query),
+        origin=(data.origin or "")[:512] or None,
+        locale=data.locale,
+        message_count=1,
+    )
+    db.add(conversation)
+    db.flush()
+    db.add(ConversationMessage(
+        conversation_id=conversation.id, role="user", content=query, details={"surface": "search"},
+    ))
+    db.commit()
+
+    events: "asyncio.Queue[Optional[str]]" = asyncio.Queue()
+    _start(_reply_and_store(chat_app.id, conversation.id, data.locale, events, traced, mode="search"))
+    return _relay(events, first=_sse("started", {"conversation_id": str(conversation.id), "query": query}))
 
 
 @router.post("/conversations/{conversation_id}/messages")
@@ -314,27 +459,8 @@ async def send_message(
 
     events: "asyncio.Queue[Optional[str]]" = asyncio.Queue()
     traced = trace_tokens.verify(x_hop_trace, chat_app.id)
-    task = asyncio.create_task(_reply_and_store(chat_app.id, conversation.id, locale, events, traced))
-    _background.add(task)
-    task.add_done_callback(_background.discard)
-
-    async def stream() -> AsyncIterator[str]:
-        yield _sse("accepted", accepted)
-        while True:
-            try:
-                item = await asyncio.wait_for(events.get(), timeout=15)
-            except asyncio.TimeoutError:
-                yield ": keep-alive\n\n"  # stops proxies closing an idle stream
-                continue
-            if item is None:
-                break
-            yield item
-
-    return StreamingResponse(
-        stream(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
+    _start(_reply_and_store(chat_app.id, conversation.id, locale, events, traced))
+    return _relay(events, first=_sse("accepted", accepted))
 
 
 # Strong references to in-flight reply tasks, so they are not garbage-collected

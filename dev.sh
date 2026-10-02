@@ -163,6 +163,7 @@ cat > "$PROXY_CONF" <<EOF
 {
   "/api/":    { "target": "http://127.0.0.1:${BACKEND_PORT}", "secure": false },
   "/c/":      { "target": "http://127.0.0.1:${BACKEND_PORT}", "secure": false },
+  "/a/":      { "target": "http://127.0.0.1:${BACKEND_PORT}", "secure": false },
   "/embed/":  { "target": "http://127.0.0.1:${BACKEND_PORT}", "secure": false },
   "/widget/": { "target": "http://127.0.0.1:${BACKEND_PORT}", "secure": false }
 }

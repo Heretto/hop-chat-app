@@ -8,7 +8,8 @@ import { webcrypto } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const STATIC = fileURLToPath(new URL('../../app/widget/static/', import.meta.url));
-const chatJs = fs.readFileSync(STATIC + 'chat.js', 'utf8');
+// The pages load common.js first; the tests evaluate them in the same order.
+const chatJs = fs.readFileSync(STATIC + 'common.js', 'utf8') + '\n' + fs.readFileSync(STATIC + 'chat.js', 'utf8');
 const embedJs = fs.readFileSync(STATIC + 'embed.js', 'utf8');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 

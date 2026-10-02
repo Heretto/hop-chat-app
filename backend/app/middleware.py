@@ -14,7 +14,7 @@ Registered after ``create_hop_app`` so it runs outermost:
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-VISITOR_PREFIXES = ("/api/v1/public/", "/c/", "/embed/", "/widget/")
+VISITOR_PREFIXES = ("/api/v1/public/", "/c/", "/a/", "/embed/", "/widget/")
 
 
 class PublicPathMiddleware:

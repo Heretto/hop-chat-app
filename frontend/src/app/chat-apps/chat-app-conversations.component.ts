@@ -37,7 +37,9 @@ const PAGE_SIZE = 50;
         <div class="spinner" *ngIf="loading"><mat-spinner diameter="28"></mat-spinner></div>
         <button type="button" class="row" *ngFor="let c of items"
                 [class.selected]="c.id === selected?.id" (click)="select(c)">
-          <span class="row-title">{{ c.title }}</span>
+          <span class="row-title">
+            <span class="hop-status-chip surface" *ngIf="c.surface === 'search'">Search</span>{{ c.title }}
+          </span>
           <span class="row-meta">{{ c.visitor }} · {{ c.message_count }} messages · {{ (c.updated_at || c.created_at) | date: 'MMM d, h:mm a' }}</span>
         </button>
         <button mat-button class="more" *ngIf="items.length < total" (click)="more()">Load more</button>
@@ -52,6 +54,7 @@ const PAGE_SIZE = 50;
               <div>
                 <h3>{{ selected.title }}</h3>
                 <div class="meta">
+                  <span class="hop-status-chip surface" *ngIf="selected.surface === 'search'">Started from a search</span>
                   {{ selected.visitor }} · started {{ selected.created_at | date: 'medium' }}
                   <ng-container *ngIf="selected.locale"> · {{ selected.locale }}</ng-container>
                 </div>
@@ -65,6 +68,9 @@ const PAGE_SIZE = 50;
               <div class="msg" *ngFor="let m of selected.messages" [class.user]="m.role === 'user'" [class.failed]="m.details?.error">
                 <div class="who">{{ m.role === 'user' ? 'Visitor' : 'Assistant' }} · {{ m.created_at | date: 'h:mm:ss a' }}</div>
                 <div class="body">{{ m.content }}</div>
+                <div class="options" *ngIf="m.options?.length">
+                  <span class="hop-status-chip" *ngFor="let o of m.options">{{ o }}</span>
+                </div>
                 <div class="callout error" *ngIf="m.details?.error"><mat-icon>error_outline</mat-icon>{{ m.details.error }}</div>
                 <div class="sources" *ngIf="m.sources?.length">
                   <mat-icon>menu_book</mat-icon>
@@ -95,6 +101,8 @@ const PAGE_SIZE = 50;
     .row.selected { background: var(--color-accent-bg); box-shadow: inset 3px 0 0 var(--color-accent); }
     .row-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .row-meta { font-size: 0.8rem; color: var(--text-tertiary); }
+    .surface { margin-right: 6px; font-size: 0.7rem; vertical-align: 1px; }
+    .options { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
     .more { width: 100%; }
     .spinner { display: flex; justify-content: center; padding: 24px; }
     .transcript { min-height: 320px; }
