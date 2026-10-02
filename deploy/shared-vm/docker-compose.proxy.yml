@@ -1,11 +1,14 @@
 # The VM's single entry point: Caddy, with automatic HTTPS for every service.
 #
-#   cd deploy/shared-vm
+# It belongs to the VM, not to any one app: copy this file, the Caddyfile and
+# .env.example to a directory of their own (e.g. ~/edge), then
+#
+#   docker network create edge      # once per VM; every app joins it
 #   cp .env.example .env            # set ACME_EMAIL and the hostnames
 #   docker compose -f docker-compose.proxy.yml up -d
 #
-# It creates the shared "edge" network that each service joins, so start it
-# before the services (or create the network yourself: docker network create edge).
+# The network is created by hand rather than by this file so that any stack —
+# this one or an app's — can start first.
 name: edge
 
 services:
@@ -29,6 +32,7 @@ services:
 
 networks:
   edge:
+    external: true
     name: edge
 
 volumes:
