@@ -28,6 +28,10 @@ class AppSettings(HopCoreSettings):
     # Per-IP limit on visitor messages. Every message is a paid model call.
     public_message_rate_limit: str = "20/minute"
 
+    # Per-IP limit on search-answer requests. Keyword searches skipped by the
+    # question check still count; the widget hides itself when limited.
+    public_search_rate_limit: str = "30/minute"
+
     # How many tool round-trips one visitor message may take.
     chat_max_tool_iterations: int = 8
 

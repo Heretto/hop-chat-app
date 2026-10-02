@@ -1,6 +1,7 @@
 {
   "/api/": { "target": "http://localhost:8000", "secure": false, "changeOrigin": false },
   "/c/": { "target": "http://localhost:8000", "secure": false, "changeOrigin": false },
+  "/a/": { "target": "http://localhost:8000", "secure": false, "changeOrigin": false },
   "/embed/": { "target": "http://localhost:8000", "secure": false, "changeOrigin": false },
   "/widget/": { "target": "http://localhost:8000", "secure": false, "changeOrigin": false }
 }

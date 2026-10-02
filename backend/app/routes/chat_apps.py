@@ -17,8 +17,8 @@ from hop_core.models.credential import Credential
 
 from app import trace
 from app.deploy.credential import DEPLOY_CREDENTIAL_TYPE
-from app.models import ChatApp, Conversation, new_public_id
-from app.routes.common import load_chat_app, serialize_chat_app, visitor_pseudonym
+from app.models import ChatApp, Conversation, ConversationMessage, new_public_id
+from app.routes.common import apply_search, load_chat_app, serialize_chat_app, visitor_pseudonym
 from app.schemas import (
     ChatAppCreate,
     ChatAppResponse,
@@ -111,6 +111,8 @@ async def create_chat_app(
         is_active=data.is_active,
         created_by=context.user.email,
     )
+    if data.search is not None:
+        apply_search(chat_app, data.search)
     db.add(chat_app)
     db.commit()
     return serialize_chat_app(_owned(chat_app.id, context, db), db)
@@ -143,6 +145,8 @@ async def update_chat_app(
     )
     if "appearance" in changes and data.appearance is not None:
         changes["appearance"] = data.appearance.model_dump()
+    if changes.pop("search", None) is not None:
+        apply_search(chat_app, data.search)
 
     for key, value in changes.items():
         if key == "name" and value is None:
@@ -191,7 +195,22 @@ async def delete_chat_app(
 
 # ── Transcripts ───────────────────────────────────────────────────────────────
 
-def _summary(conversation: Conversation) -> OperatorConversationSummary:
+def _surfaces(db: Session, conversation_ids: List[UUID]) -> dict:
+    """Which surface each conversation started on, from its first visitor message."""
+    if not conversation_ids:
+        return {}
+    first: dict = {}
+    rows = (
+        db.query(ConversationMessage.conversation_id, ConversationMessage.details)
+        .filter(ConversationMessage.conversation_id.in_(conversation_ids), ConversationMessage.role == "user")
+        .order_by(ConversationMessage.created_at)
+    )
+    for conversation_id, details in rows:
+        first.setdefault(conversation_id, (details or {}).get("surface") or "chat")
+    return first
+
+
+def _summary(conversation: Conversation, surface: str = "chat") -> OperatorConversationSummary:
     return OperatorConversationSummary(
         id=conversation.id,
         title=conversation.title,
@@ -201,6 +220,7 @@ def _summary(conversation: Conversation) -> OperatorConversationSummary:
         origin=conversation.origin,
         locale=conversation.locale,
         visitor=visitor_pseudonym(conversation.visitor_hash),
+        surface=surface,
     )
 
 
@@ -216,7 +236,8 @@ async def list_conversations(
     query = db.query(Conversation).filter(Conversation.chat_app_id == chat_app.id)
     total = query.count()
     rows = query.order_by(Conversation.updated_at.desc()).offset(offset).limit(limit).all()
-    return ConversationPage(items=[_summary(c) for c in rows], total=total)
+    surfaces = _surfaces(db, [c.id for c in rows])
+    return ConversationPage(items=[_summary(c, surfaces.get(c.id, "chat")) for c in rows], total=total)
 
 
 def _owned_conversation(chat_app: ChatApp, conversation_id: UUID, db: Session) -> Conversation:
@@ -237,10 +258,11 @@ async def get_conversation(
 ):
     conversation = _owned_conversation(_owned(chat_app_id, context, db), conversation_id, db)
     return OperatorConversationDetail(
-        **_summary(conversation).model_dump(),
+        **_summary(conversation, _surfaces(db, [conversation.id]).get(conversation.id, "chat")).model_dump(),
         messages=[
             OperatorMessageOut(
                 id=m.id, role=m.role, content=m.content, sources=m.sources or [],
+                options=list((m.details or {}).get("options") or []),
                 details=m.details or {}, created_at=m.created_at,
             )
             for m in conversation.messages

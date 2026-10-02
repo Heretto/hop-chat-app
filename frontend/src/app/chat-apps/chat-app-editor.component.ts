@@ -24,6 +24,7 @@ import {
 
 import { AgentLogComponent, TraceEvent } from './agent-log.component';
 import { ChatAppConversationsComponent } from './chat-app-conversations.component';
+import { ChatAppSearchComponent, SearchDraft, searchDraftFrom, searchWidgetFrom } from './chat-app-search.component';
 import { Appearance, ChatApp, ChatAppService, ChatAppWrite, DEFAULT_APPEARANCE } from './chat-app.service';
 
 const DEPLOY_TYPE = 'heretto_deploy';
@@ -36,6 +37,7 @@ interface Draft {
   is_active: boolean;
   appearance: Appearance;
   origins: string; // one per line in the form
+  search: SearchDraft;
 }
 
 @Component({
@@ -45,7 +47,7 @@ interface Draft {
     CommonModule, FormsModule, RouterLink, MatButtonModule, MatButtonToggleModule, MatCardModule,
     MatDialogModule, MatFormFieldModule, MatIconModule, MatInputModule, MatProgressSpinnerModule,
     MatSelectModule, MatSlideToggleModule, MatSnackBarModule, MatTabsModule, MatTooltipModule,
-    ChatAppConversationsComponent, AgentLogComponent,
+    ChatAppConversationsComponent, AgentLogComponent, ChatAppSearchComponent,
   ],
   template: `
     <div class="hop-page">
@@ -286,6 +288,13 @@ interface Draft {
             </div>
           </mat-tab>
 
+          <!-- Search answers -->
+          <mat-tab label="Search answers">
+            <ng-template matTabContent>
+              <app-chat-app-search [draft]="draft.search" [app]="app" [dirty]="dirty"></app-chat-app-search>
+            </ng-template>
+          </mat-tab>
+
           <!-- Conversations -->
           <mat-tab [label]="'Conversations' + (app ? ' (' + app.conversation_count + ')' : '')" [disabled]="!app">
             <ng-template matTabContent>
@@ -434,6 +443,7 @@ export class ChatAppEditorComponent implements OnInit {
             agent_id: agents.length === 1 ? agents[0].id : null,
             deploy_credential_id: this.deployCredentials.length === 1 ? this.deployCredentials[0].id : null,
             appearance: structuredClone(DEFAULT_APPEARANCE),
+            search: searchDraftFrom(null),
           };
           this.saved = JSON.stringify(this.draft);
           this.loading = false;
@@ -453,6 +463,7 @@ export class ChatAppEditorComponent implements OnInit {
       is_active: app.is_active,
       appearance: structuredClone({ ...DEFAULT_APPEARANCE, ...app.appearance }),
       origins: app.allowed_origins.join('\n'),
+      search: searchDraftFrom(app.search),
     };
     this.saved = JSON.stringify(this.draft);
     if (this.route.snapshot.queryParamMap.get('section') === 'embed') this.tab = 2;
@@ -469,6 +480,7 @@ export class ChatAppEditorComponent implements OnInit {
       is_active: d.is_active,
       appearance: { ...d.appearance, suggested_prompts: d.appearance.suggested_prompts.map(p => p.trim()).filter(Boolean) },
       allowed_origins: d.origins.split(/[\n,]/).map(o => o.trim()).filter(Boolean),
+      search: searchWidgetFrom(d.search),
     };
   }
 

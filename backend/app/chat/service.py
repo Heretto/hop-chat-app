@@ -140,12 +140,16 @@ async def answer(
     on_status: Optional[Callable[[str], Awaitable[None]]] = None,
     transport=None,
     trace: Optional[engine.Tracer] = None,
+    extra_guidance: Optional[str] = None,
 ) -> Reply:
     """Produce the assistant's reply to the last user turn in ``history``.
 
     ``trace``, when given, receives operator-facing events describing the run
     (model calls, tool calls and their results). It is only wired up for the
     admin Test tab — visitors never see these.
+
+    ``extra_guidance`` is appended to the system prompt for this run only —
+    the search-answers surface uses it for its answer/clarify protocol.
     """
 
     async def emit(event: Dict[str, Any]) -> None:
@@ -217,7 +221,8 @@ async def answer(
         provider=ai_credential.type,
         model=model,
         api_key=api_key,
-        system_prompt=system_prompt(definition, deployment_title),
+        system_prompt=system_prompt(definition, deployment_title)
+        + (f"\n\n{extra_guidance}" if extra_guidance else ""),
         messages=history[-MAX_HISTORY_MESSAGES:],
         tools=tools,
         max_iterations=_max_iterations(),
@@ -247,7 +252,8 @@ async def answer(
     })
 
     content = await engine.run_conversation(request, traced_execute, notify)
-    if not content.strip():
+    empty = not content.strip()
+    if empty:
         content = "Sorry — I couldn't put an answer together. Please try rephrasing your question."
 
     return Reply(
@@ -259,6 +265,7 @@ async def answer(
             "model": model,
             "ai_configuration": ai_credential.name,
             "tool_calls": tool_log,
+            **({"empty_reply": True} if empty else {}),
         },
     )
 

@@ -72,6 +72,9 @@ class ChatApp(Base):
     conversations = relationship(
         "Conversation", back_populates="chat_app", cascade="all, delete-orphan"
     )
+    search_widget = relationship(
+        "SearchWidget", back_populates="chat_app", uselist=False, cascade="all, delete-orphan"
+    )
 
 
 class Conversation(Base):
@@ -120,3 +123,24 @@ class ConversationMessage(Base):
     conversation = relationship("Conversation", back_populates="messages")
 
     __table_args__ = (Index("ix_chat_messages_conversation", "conversation_id", "created_at"),)
+
+
+class SearchWidget(Base):
+    """A chat app's search-answers surface: settings for the widget that sits in
+    a docs portal's search results and answers searches that are questions.
+
+    A separate table rather than columns on ``chat_apps`` so hop-core's startup
+    ``create_all`` adds it to existing databases — there are no migrations yet.
+    """
+
+    __tablename__ = "chat_app_search_widgets"
+
+    chat_app_id = Column(
+        UUID(as_uuid=True), ForeignKey("chat_apps.id", ondelete="CASCADE"), primary_key=True
+    )
+    enabled = Column(Boolean, nullable=False, default=False)
+    # Validated by app.schemas.SearchSettings.
+    settings = Column(JSON, nullable=False, default=dict)
+    updated_at = Column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+    chat_app = relationship("ChatApp", back_populates="search_widget")

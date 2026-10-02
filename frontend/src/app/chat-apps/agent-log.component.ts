@@ -243,6 +243,29 @@ function build(events: TraceEvent[]): Block[] {
         });
         break;
       }
+      case 'search.skip': {
+        turn = null;
+        const t = ensureTurn(e['query'] || '(search)');
+        t.running = false;
+        t.rows.push(e['reason'] === 'keywords'
+          ? { icon: 'filter_alt_off', tone: 'neutral', at: e.t_ms, title: 'Looks like a keyword search — skipped without an AI call', meta: [],
+              text: 'Turn off “Skip keyword searches without asking the AI” to let the agent judge every search.' }
+          : { icon: 'block', tone: 'warn', at: e.t_ms, title: 'The chat app cannot answer, so the panel stays hidden', meta: [],
+              items: e['problems'] || [] });
+        break;
+      }
+      case 'search.result': {
+        const kind = e['kind'];
+        const options: string[] = e['options'] || [];
+        ensureTurn().rows.push(
+          kind === 'answer'
+            ? { icon: 'rule', tone: 'ok', at: e.t_ms, title: 'Decided to answer', meta: [] }
+            : kind === 'clarify'
+              ? { icon: 'help', tone: 'ok', at: e.t_ms, title: 'Decided to ask a follow-up question', meta: options.length ? [`${options.length} options`] : [],
+                  items: options.length ? options : undefined }
+              : { icon: 'visibility_off', tone: 'neutral', at: e.t_ms, title: 'Decided it isn’t a question — the panel stays hidden', meta: [] });
+        break;
+      }
       case 'deploy.error':
         ensureTurn().rows.push({ icon: 'cloud_off', tone: 'warn', at: e.t_ms, title: e['message'], meta: [] });
         break;

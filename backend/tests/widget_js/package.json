@@ -2,6 +2,10 @@
   "name": "hop-chat-widget-tests",
   "private": true,
   "type": "module",
-  "scripts": { "test": "node widget.test.mjs" },
-  "devDependencies": { "jsdom": "^26.1.0" }
+  "scripts": {
+    "test": "node widget.test.mjs && node search.test.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "^26.1.0"
+  }
 }
