@@ -1,7 +1,11 @@
 # docker compose up --build   →   http://localhost:8080
 # Reads ./.env (copy .env.example). The admin UI, API and chat share one origin.
+#
+# Service names are prefixed so they stay unique on a Docker network shared with
+# other apps (deploy/shared-vm): plain "frontend"/"backend" would be registered
+# there too, and another app's proxy could resolve them to these containers.
 services:
-  backend:
+  hop-chat-backend:
     build: ./backend
     environment:
       APP_ENV: ${APP_ENV:-production}
@@ -19,12 +23,12 @@ services:
       - chat-data:/data
     restart: unless-stopped
 
-  frontend:
+  hop-chat-web:
     build: ./frontend
     ports:
       - "${PORT:-8080}:80"
     depends_on:
-      - backend
+      - hop-chat-backend
     restart: unless-stopped
 
 volumes:
