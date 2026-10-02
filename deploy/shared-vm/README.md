@@ -46,13 +46,19 @@ default log driver grows until the disk is full. `/etc/docker/daemon.json`:
 then `sudo systemctl restart docker`. This applies to containers created
 afterwards. The compose files here also set it for their own containers.
 
-**2. Start Caddy:**
+**2. Start Caddy** from a directory of its own: the proxy belongs to the VM,
+not to HOP Chat or any other app.
 
 ```bash
-cd deploy/shared-vm
+docker network create edge                       # once per VM
+mkdir -p ~/edge && cp deploy/shared-vm/{docker-compose.proxy.yml,Caddyfile,.env.example} ~/edge/
+cd ~/edge
 cp .env.example .env        # set ACME_EMAIL and HOP_CHAT_HOST
 docker compose -f docker-compose.proxy.yml up -d
 ```
+
+Keep `~/edge` (its `Caddyfile` especially) under version control or in your
+backups: it's the VM's routing table.
 
 **3. Configure HOP Chat.** Create the repo-root `.env` (don't copy
 `.env.example`: its `DATABASE_URL` is for running without Docker and would put
@@ -123,6 +129,27 @@ docker compose -f docker-compose.proxy.yml exec caddy caddy reload --config /etc
 Keep each service on its own hostname, and leave HOP Chat's `COOKIE_DOMAIN`
 unset. Its login cookies then stay on its own host and can't collide with
 another app's, which matters if one of the others is also a hop-core app.
+
+## Moving an existing app behind Caddy
+
+An app that terminates TLS itself (its own nginx with certbot, publishing
+80/443) moves behind Caddy with three changes to its proxy, or Caddy and it
+will fight:
+
+1. **Plain HTTP only.** Serve the app's routing on port 80 with no redirect
+   to HTTPS. Caddy talks HTTP to it, so an HTTP→HTTPS redirect there loops
+   forever. Drop its `ssl` server, certificates and ACME location.
+2. **Believe Caddy about the visitor.** With nginx, set
+   `set_real_ip_from` the private ranges plus `real_ip_header X-Forwarded-For`.
+   Otherwise every request comes from Caddy's address, and per-IP rate limits
+   (`limit_req_zone $binary_remote_addr`) throttle all visitors as one.
+   Pass `X-Forwarded-Proto` through from Caddy instead of `$scheme`, or the
+   app thinks it is served over HTTP.
+3. **No published ports; join `edge`** with a unique alias, and give it a site
+   block in the Caddyfile.
+
+Expect a minute of downtime for that app while its proxy is recreated and
+Caddy gets certificates (port 80 must be free before Caddy starts).
 
 ## Behind an existing nginx (instead of Caddy)
 
