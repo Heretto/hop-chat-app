@@ -148,6 +148,9 @@ will fight:
 3. **No published ports; join `edge`** with a unique alias, and give it a site
    block in the Caddyfile.
 
+`examples/release-notes-nginx.conf` is a worked example: the Release Notes
+Agent's nginx after the move.
+
 Expect a minute of downtime for that app while its proxy is recreated and
 Caddy gets certificates (port 80 must be free before Caddy starts).
 
