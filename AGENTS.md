@@ -118,6 +118,14 @@ An embeddable documentation chat. The domain model, and which layer owns what:
   `HOP_CHAT_PROXY_NETWORK` (default `edge`), so it also works behind another
   app's existing nginx (`nginx-hop-chat.conf`). It must not set `name:`:
   renaming the project renames the `chat-data` volume.
+- **Accounts are hop-core's.** This app adds no sign-up or sign-in logic, and
+  nothing in it creates users (the visitor API is anonymous). `docker-compose.yml`
+  only passes hop-core's settings through (`SSO_ONLY`, OAuth clients,
+  `OAUTH_REDIRECT_BASE_URL`, `ALLOWED_EMAIL_DOMAINS`, `SINGLE_ORG_*`); unset
+  ones arrive as empty strings, which hop-core treats as unset.
+  `OAUTH_REDIRECT_BASE_URL` defaults to `PUBLIC_BASE_URL`, so the Microsoft
+  callback is right behind a proxy. `tests/test_sso_only.py` checks nothing
+  here opens a password path around `SSO_ONLY`.
 - **Compose service names must stay unique** (`hop-chat-backend`,
   `hop-chat-web`). Compose registers each service name on every network the
   service joins, so on a network shared with another app, a plain
