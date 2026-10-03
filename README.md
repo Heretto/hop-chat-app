@@ -171,6 +171,12 @@ make doctor      # hop-core integration audit
 
 ## Security notes
 
+- **Accounts are hop-core's.** Sign-up and sign-in are hop-core's own, and
+  `docker-compose.yml` passes its settings through. For production, use
+  `SSO_ONLY=true` with Google and/or Microsoft configured: password sign-up,
+  login and reset are then refused, and the login page offers only SSO. Add
+  `ALLOWED_EMAIL_DOMAINS` to limit who can sign up. See `.env.example` and
+  hop-core's `AGENTS.md` ("SSO-only deployments").
 - **Deploy and AI keys** are hop-core credentials, Fernet-encrypted at rest and
   never returned by the API. Back up `ENCRYPTION_KEY`: it cannot be rotated.
 - **Audience scoping** in the Deploy credential applies to every call, so

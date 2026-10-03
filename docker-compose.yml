@@ -19,6 +19,22 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       PUBLIC_MESSAGE_RATE_LIMIT: ${PUBLIC_MESSAGE_RATE_LIMIT:-20/minute}
       PUBLIC_SEARCH_RATE_LIMIT: ${PUBLIC_SEARCH_RATE_LIMIT:-30/minute}
+      # hop-core's sign-up and sign-in settings, passed through unchanged; hop-core
+      # enforces them. SSO_ONLY=true refuses every password route (sign-up,
+      # login, reset, password-based invitation acceptance) and the login page
+      # offers only Google/Microsoft. See .env.example and hop-core's AGENTS.md
+      # ("SSO-only deployments"). Unset values keep hop-core's defaults.
+      SSO_ONLY: ${SSO_ONLY:-false}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      MICROSOFT_OAUTH_CLIENT_ID: ${MICROSOFT_OAUTH_CLIENT_ID:-}
+      MICROSOFT_OAUTH_CLIENT_SECRET: ${MICROSOFT_OAUTH_CLIENT_SECRET:-}
+      MICROSOFT_OAUTH_TENANT_ID: ${MICROSOFT_OAUTH_TENANT_ID:-common}
+      # Where SSO providers send people back; the Microsoft callback is
+      # {this}/api/v1/auth/sso/microsoft/callback. Defaults to PUBLIC_BASE_URL.
+      OAUTH_REDIRECT_BASE_URL: ${OAUTH_REDIRECT_BASE_URL:-${PUBLIC_BASE_URL:-http://localhost:8080}}
+      ALLOWED_EMAIL_DOMAINS: ${ALLOWED_EMAIL_DOMAINS:-}
+      SINGLE_ORG_MODE: ${SINGLE_ORG_MODE:-false}
+      SINGLE_ORG_SLUG: ${SINGLE_ORG_SLUG:-}
     volumes:
       - chat-data:/data
     restart: unless-stopped

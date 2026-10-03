@@ -76,7 +76,9 @@ EOF
 chmod 600 .env
 ```
 
-`PUBLIC_BASE_URL` must be exactly the HOP Chat site's origin.
+`PUBLIC_BASE_URL` must be exactly the HOP Chat site's origin. For production,
+add hop-core's SSO settings (`SSO_ONLY=true`, a Google and/or Microsoft client,
+`ALLOWED_EMAIL_DOMAINS`), listed in the repo's `.env.example`.
 
 Back up `ENCRYPTION_KEY` outside the VM (e.g. Secret Manager). Without it,
 every stored API key and Deploy token is unreadable.
