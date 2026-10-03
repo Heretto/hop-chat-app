@@ -21,6 +21,7 @@ service on a shared `edge` Docker network. HOP Chat publishes no port of its own
 | `Caddyfile` | One site block per service. HOP Chat's is filled in; two placeholders for yours. |
 | `.env.example` | `ACME_EMAIL` and the hostnames Caddy serves. |
 | `docker-compose.override.yml` | Layered on the repo's `docker-compose.yml`: no published port, joins the proxy's network (`edge`, or `HOP_CHAT_PROXY_NETWORK`) as `hop-chat`, memory caps, log rotation. |
+| `services.sh` | Starts and stops the whole VM in order (edge first on start, last on stop). Copy it to `~/edge` and set the paths at its top. |
 | `nginx-hop-chat.conf` | Server blocks for when another app's nginx is already the entry point instead of Caddy (see below). |
 
 Sized for an e2-standard-2 (2 vCPU, 8 GB) shared three ways: HOP Chat uses
