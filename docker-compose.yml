@@ -35,6 +35,7 @@ services:
       ALLOWED_EMAIL_DOMAINS: ${ALLOWED_EMAIL_DOMAINS:-}
       SINGLE_ORG_MODE: ${SINGLE_ORG_MODE:-false}
       SINGLE_ORG_SLUG: ${SINGLE_ORG_SLUG:-}
+      SINGLE_ORG_NAME: ${SINGLE_ORG_NAME:-}
     volumes:
       - chat-data:/data
     restart: unless-stopped
