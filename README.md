@@ -157,10 +157,9 @@ the backend, all on one origin. Put TLS in front, set `PUBLIC_BASE_URL` to the
 public `https://` origin and `COOKIE_SECURE=true`.
 
 **Sharing a VM with other services?** [`deploy/shared-vm/`](deploy/shared-vm/README.md)
-adds Caddy as the single entry point. It owns 80/443, provides automatic HTTPS
-and routes by hostname to each service on a shared Docker network. It also has
-an override that runs HOP Chat behind it with no published port, plus memory
-caps and log rotation.
+runs HOP Chat behind the VM's existing reverse proxy (Caddy or nginx) on a
+shared Docker network: an override with no published port, plus memory caps
+and log rotation.
 
 ### Tests
 

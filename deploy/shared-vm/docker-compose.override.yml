@@ -8,10 +8,9 @@
 # backend gets a memory cap so it cannot crowd out its neighbours, and logs
 # are rotated. Needs Docker Compose 2.24 or later for `!reset`.
 #
-# The proxy's network is "edge" (this folder's Caddy stack) unless
-# HOP_CHAT_PROXY_NETWORK in the repo-root .env names another — for example an
-# existing app's network when its nginx is the VM's entry point
-# (README.md, "Behind an existing nginx"). Only the web container joins it; the
+# The proxy's network is "edge" unless HOP_CHAT_PROXY_NETWORK in the repo-root
+# .env names another — for example an existing app's network when its nginx is
+# the VM's entry point (README.md, "Behind an existing nginx"). Only the web container joins it; the
 # backend stays on HOP Chat's own network.
 #
 # No `name:` here on purpose: changing the project name renames the data

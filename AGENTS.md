@@ -108,16 +108,17 @@ An embeddable documentation chat. The domain model, and which layer owns what:
   "attempt to write a readonly database". Point `DATABASE_URL` at a local path.
 - Angular 22 needs Node ≥ 22.22.3 or ≥ 24.15.
 - **Forwarding headers.** `frontend/nginx.conf` believes `X-Forwarded-For` /
-  `X-Forwarded-Proto` only from a proxy on a private network (Caddy in
-  `deploy/shared-vm/`). It passes the backend a single client address, never a
+  `X-Forwarded-Proto` only from a proxy on a private network (the VM's
+  reverse proxy in `deploy/shared-vm/`). It passes the backend a single client address, never a
   chain, because uvicorn (`--forwarded-allow-ips "*"`) takes the first entry,
   and an appended chain would let visitors spoof their IP past the rate limits.
-- **Shared-VM deployment** (`deploy/shared-vm/`): Caddy stack (project `edge`,
-  creates the `edge` network) plus an override for the main compose file
-  (`!reset` drops the published port; needs Compose ≥ 2.24). The override joins
-  `HOP_CHAT_PROXY_NETWORK` (default `edge`), so it also works behind another
-  app's existing nginx (`nginx-hop-chat.conf`). It must not set `name:`:
-  renaming the project renames the `chat-data` volume.
+- **Shared-VM deployment** (`deploy/shared-vm/`): an override for the main
+  compose file (`!reset` drops the published port; needs Compose ≥ 2.24) that
+  joins the VM's proxy network, `HOP_CHAT_PROXY_NETWORK` (default `edge`), as
+  `hop-chat`. Behind Caddy or another app's nginx (`nginx-hop-chat.conf`). The
+  proxy, the `edge` network and VM-wide start/stop scripts are not part of this
+  repo. The override must not set `name:`: renaming the project renames the
+  `chat-data` volume.
 - **Accounts are hop-core's.** This app adds no sign-up or sign-in logic, and
   nothing in it creates users (the visitor API is anonymous). `docker-compose.yml`
   only passes hop-core's settings through (`SSO_ONLY`, OAuth clients,
