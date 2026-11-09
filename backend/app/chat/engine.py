@@ -116,6 +116,24 @@ async def _model_failed(req: EngineRequest, iteration: int, started: float, erro
     })
 
 
+#: What each vendor reports when the reply hit ``max_tokens``.
+CUT_OFF_REASONS = {"max_tokens", "length", "MAX_TOKENS"}
+
+
+def _final(provider: str, text: str, stop_reason: Optional[str], max_tokens: int) -> str:
+    """The reply, unless it is empty because the token budget ran out.
+
+    Reasoning models think inside ``max_tokens`` and can spend it all before
+    writing anything. Mirrors ``hop_core.agents.providers._reply``.
+    """
+    if not text.strip() and stop_reason in CUT_OFF_REASONS:
+        raise AiProviderError(
+            f"{provider} ran out of room before writing a reply: the {max_tokens:,}-token "
+            "max_tokens budget was used up. Raise max_tokens."
+        )
+    return text
+
+
 _WRAP_UP = (
     "You have used all the tool calls available for this message. Answer now from "
     "what you have already retrieved."
@@ -173,7 +191,7 @@ async def _run_anthropic(req: EngineRequest, execute: ToolExecutor, notify: Tool
                 [{"name": b.get("name"), "args": b.get("input") or {}} for b in blocks if b.get("type") == "tool_use"],
             )
             if data.get("stop_reason") != "tool_use":
-                return text
+                return _final("Anthropic", text, data.get("stop_reason"), req.max_tokens)
 
             messages.append({"role": "assistant", "content": blocks})
             results = []
@@ -248,7 +266,7 @@ async def _run_openai(req: EngineRequest, execute: ToolExecutor, notify: ToolNot
                 [{"name": (c.get("function") or {}).get("name"), "args": _args(c)} for c in calls],
             )
             if not calls:
-                return message.get("content") or ""
+                return _final("OpenAI", message.get("content") or "", choice.get("finish_reason"), req.max_tokens)
 
             messages.append(message)
             for call in calls:
@@ -315,7 +333,7 @@ async def _run_gemini(req: EngineRequest, execute: ToolExecutor, notify: ToolNot
                 [{"name": c.get("name"), "args": c.get("args") or {}} for c in calls],
             )
             if not calls:
-                return text
+                return _final("Google Gemini", text, candidates[0].get("finishReason"), req.max_tokens)
 
             contents.append({"role": "model", "parts": parts})
             replies = []

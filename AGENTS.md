@@ -1,6 +1,6 @@
 # HOP Chat — agent notes
 
-Built on [hop-core](https://github.com/Heretto/hop-core), pinned at **v0.1.12**
+Built on [hop-core](https://github.com/Heretto/hop-core), pinned at **v0.1.20**
 (`backend/requirements.txt` and the `@heretto/hop-ui` asset URL in
 `frontend/package.json` — always bump them together).
 
@@ -24,18 +24,25 @@ An embeddable documentation chat. The domain model, and which layer owns what:
 | Thing | Owned by | Notes |
 |---|---|---|
 | AI configuration (provider, model, key) | hop-core credential (`anthropic`/`openai`/`gemini`) | selected by an agent |
-| **Agent** (instructions, context files, reference URLs, memory) | hop-core `/agents` + `HOP_AGENT_ROUTES` UI | **the only place the AI is configured** |
+| **Agent** (instructions, context files, references, memory) | hop-core `/agents` + `HOP_AGENT_ROUTES` UI | **the only place the AI is configured** |
+| Heretto CCMS connection (server, user, token) | hop-core credential of type `heretto` | only for an agent's Heretto references (style guide, terminology, …); visitors' answers come from Deploy |
 | Deploy deployment (org, deployment, token, portal URL, audience) | hop-core credential of type `heretto_deploy`, registered in `app/deploy/credential.py` | has a Test button |
 | **Chat app** (agent + deploy credential + appearance + allowed origins + public URL) | this app, `app/models.py` → `/api/v1/chat-apps/` | one per website/app |
 | Conversations + messages (retained transcripts) | this app | visitor = sha256 of a browser-held token |
 
 - `backend/app/chat/service.py` — builds the prompt from
   `AgentDefinition.build_system_prompt()` plus the Deploy guidance, and runs it.
-- `backend/app/chat/engine.py` — our own tool-calling loop per provider.
-  hop-core's `CredentialAiService.generate_with_tools` only knows its fixed
-  `read_url` tool, so it cannot carry the Deploy tools. The loops mirror
-  `hop_core.agents.providers` (same endpoints and error style); keep them in
-  step when hop-core's change.
+  It handles the agent's references as hop-core's `AgentRunner` does:
+  `AgentRunner.prepare()` loads the included Heretto references (style guide,
+  information model, terminology) into the prompt, and `read_heretto` reads
+  general ones on demand. The prompt names `read_heretto` whenever such
+  references exist, so the tool must stay offered and executed here.
+- `backend/app/chat/engine.py` — our own tool-calling loop per provider. Since
+  v0.1.14 `CredentialAiService.generate_with_tools` takes arbitrary tools
+  (`GenerationRequest.tools`), but it has no hooks for the per-call trace events,
+  the status labels or our wrap-up turn, so it still cannot replace this. The
+  loops mirror `hop_core.agents.providers` (same endpoints, error style, and the
+  empty-reply-at-`max_tokens` error); keep them in step when hop-core's change.
 - `backend/app/deploy/` — Deploy v4 client and tools. We call the API directly
   rather than running `heretto-deploy-mcp`, because that server is configured
   per *process* from env vars (one token/deployment) and its HTTP mode has no
@@ -146,5 +153,8 @@ An embeddable documentation chat. The domain model, and which layer owns what:
 Resolve the current release (hop-core `AGENTS.md`, Step 0), bump the Python
 requirement and the `@heretto/hop-ui` asset URL **together**, regenerate the
 npm lock, rebuild, then re-run `hop-doctor` and `make test`. Check whether
-`hop_core.agents.providers` gained support for arbitrary tools. If it did,
-`app/chat/engine.py` can be replaced by it.
+`hop_core.agents.providers` gained per-call hooks (for the trace and status
+events). If it did, `app/chat/engine.py` can be replaced by it. Also diff
+`hop_core.agents.runner` and `AgentDefinition`: anything new the system prompt
+tells the model about (a tool, included content) must be wired into
+`service.py`.
