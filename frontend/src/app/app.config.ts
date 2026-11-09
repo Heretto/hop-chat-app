@@ -3,7 +3,7 @@ import { provideRouter, withComponentInputBinding } from '@angular/router';
 import { provideHttpClient, withInterceptors, withXhr } from '@angular/common/http';
 import { provideAnimations } from '@angular/platform-browser/animations';
 
-import { hopAuthInterceptor } from '@heretto/hop-ui';
+import { HOP_LOGIN_CONFIG, hopAuthInterceptor } from '@heretto/hop-ui';
 import { routes } from './app.routes';
 
 export const appConfig: ApplicationConfig = {
@@ -13,5 +13,6 @@ export const appConfig: ApplicationConfig = {
     provideRouter(routes, withComponentInputBinding()),
     provideHttpClient(withXhr(), withInterceptors([hopAuthInterceptor])),
     provideAnimations(),
+    { provide: HOP_LOGIN_CONFIG, useValue: { appName: 'HOP Chat' } },
   ],
 };

@@ -3,7 +3,10 @@
 Everything the model is told comes from the hop-core agent the chat app points
 at — ``AgentDefinition.build_system_prompt()`` — plus the documentation
 guidance and tools this app adds. The agent's AI configuration (a hop-core
-credential) supplies provider, model and key.
+credential) supplies provider, model and key. The agent's Heretto references
+are read the way hop-core's ``AgentRunner`` reads them: style guides,
+information models and terminology go into the prompt, and general content is
+offered through ``read_heretto``.
 """
 
 import json
@@ -12,12 +15,19 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
-from hop_core.agents import AgentDefinition, AiProviderError
+from hop_core.agents import (
+    READ_HERETTO_TOOL,
+    AgentDefinition,
+    AgentRunner,
+    AiProviderError,
+    heretto_reference_source,
+)
 from hop_core.agents.fetcher import fetch_url
 from hop_core.ai import ChatMessage
 from hop_core.core.security import decrypt_credentials
 from hop_core.models.agent import Agent
 from hop_core.models.credential import Credential
+from sqlalchemy.orm import object_session
 
 from app.chat import engine
 from app.deploy.client import DeployClient, DeployConfig, DeployError
@@ -98,6 +108,9 @@ def summarize_tool_result(name: str, result: str) -> Dict[str, Any]:
     if name == "read_url":
         failed = result.startswith("Could not fetch")
         return {"ok": not failed, "summary": result[:200] if failed else f"{len(result):,} characters of text"}
+    if name == "read_heretto":
+        failed = result.startswith(("Could not read", "No readable reference"))
+        return {"ok": not failed, "summary": result[:200] if failed else f"{len(result):,} characters of text"}
     try:
         data = json.loads(result)
     except ValueError:
@@ -161,7 +174,14 @@ async def answer(
         raise ChatUnavailable(" ".join(found))
 
     agent: Agent = chat_app.agent
-    definition = AgentDefinition.from_model(agent)
+    # Reads the agent's Heretto references through its organization's own
+    # Heretto connections. prepare() loads the ones included in every run; a
+    # reference that cannot be read is marked unavailable in the prompt.
+    references = heretto_reference_source(agent.organization_id, object_session(chat_app))
+    definition = await AgentRunner(None, reference_source=references).prepare(
+        AgentDefinition.from_model(agent)
+    )
+    readable = {ref.id: ref for ref in definition.on_demand_references}
     ai_credential: Credential = agent.ai_configuration
     ai_payload = _decrypt(ai_credential, "AI configuration")
     api_key = str(ai_payload.get("api_key") or "")
@@ -187,6 +207,8 @@ async def answer(
     tools = list(TOOLS)
     if definition.permitted_urls:
         tools.append(READ_URL_TOOL)
+    if readable:
+        tools.append(READ_HERETTO_TOOL.model_dump())
 
     tool_log: List[Dict[str, Any]] = []
 
@@ -197,8 +219,26 @@ async def answer(
             if not result.ok:
                 return f"Could not fetch {result.url}: {result.blocked_reason}"
             return result.content or "No readable content."
+        if name == "read_heretto":
+            return await read_heretto(str(args.get("reference_id") or "").strip())
         tool_log.append({"tool": name, "args": {k: str(v)[:200] for k, v in args.items()}})
         return await toolbox.execute(name, args)
+
+    async def read_heretto(ref_id: str) -> str:
+        # Mirrors hop-core's AgentRunner: only the agent's listed references.
+        ref = readable.get(ref_id)
+        tool_log.append({"tool": "read_heretto", "reference_id": ref_id, "title": ref.display_title if ref else None})
+        if ref is None:
+            return (
+                f"No readable reference with id {ref_id!r}. "
+                "Use one of the ids listed under 'Heretto content you can read'."
+            )
+        try:
+            content = await references.read(ref.credential_id, ref.file_id or "")
+        except Exception as exc:
+            logger.warning("read_heretto failed for reference %s", ref_id, exc_info=True)
+            return f"Could not read {ref.display_title}: {getattr(exc, 'message', None) or exc}"
+        return content.as_prompt_text() or f"{ref.display_title} has no readable text."
 
     async def traced_execute(name: str, args: Dict[str, Any]) -> str:
         await emit({"type": "tool.call", "tool": name, "args": args})
@@ -214,7 +254,12 @@ async def answer(
 
     async def notify(name: str, args: Dict[str, Any]) -> None:
         if on_status is not None:
-            label = "Reading a reference page" if name == "read_url" else toolbox.describe(name, args)
+            if name == "read_url":
+                label = "Reading a reference page"
+            elif name == "read_heretto":
+                label = "Reading reference material"
+            else:
+                label = toolbox.describe(name, args)
             await on_status(label)
 
     request = engine.EngineRequest(

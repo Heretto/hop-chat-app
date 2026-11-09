@@ -106,6 +106,11 @@ def test_deploy_credential_type_is_registered_with_a_tester(client, operator):
     assert [f["name"] for f in deploy["fields"] if f["secret"]] == ["token"]
 
 
+def test_heretto_ccms_connections_are_offered_for_agent_references(client, operator):
+    types = {t["type"] for t in client.get("/api/v1/credentials/types", headers=operator["headers"]).json()}
+    assert {"heretto", "heretto_deploy", "anthropic"} <= types
+
+
 def test_deploy_credential_test_button(client, configured, upstream):
     upstream.deploy[""] = (200, {"title": "Acme Docs", "publishingDate": "2026-09-01"})
     h = configured["operator"]["headers"]

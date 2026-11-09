@@ -21,8 +21,10 @@ from app.settings import get_settings
 __version__ = "0.1.0"
 
 # The credential types this app offers: the AI providers an agent's model
-# configuration is chosen from, and the Deploy deployment a chat answers from.
-register_builtin_types(*AI_PROVIDER_TYPES)
+# configuration is chosen from, Heretto CCMS connections an agent's references
+# (style guide, terminology, ...) are read through, and the Deploy deployment a
+# chat answers from.
+register_builtin_types("heretto", *AI_PROVIDER_TYPES)
 register_deploy_credential_type()
 
 app = create_hop_app(
